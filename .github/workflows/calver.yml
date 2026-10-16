@@ -1,0 +1,58 @@
+# Tags the pushed commit with the next CalVer version: vYYYY.M.N, where N counts
+# up from 1 each month (UTC). Re-running on an already tagged commit is a no-op.
+#
+# Call it from a workflow that runs on push to main:
+#
+#   jobs:
+#     tag:
+#       uses: gcrevell/workflows/.github/workflows/calver.yml@main
+#       permissions:
+#         contents: write
+
+name: CalVer tag
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: The commit's version tag, e.g. v2026.10.4
+        value: ${{ jobs.tag.outputs.version }}
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Two merges in quick succession would otherwise both pick the same number.
+    concurrency:
+      group: calver-${{ github.repository }}
+      cancel-in-progress: false
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: next
+        run: |
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | head -1)
+          if [ -n "$existing" ]; then
+            echo "HEAD is already tagged $existing"
+            echo "version=$existing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # No zero padding on the month: PEP 440 and SemVer tools strip it anyway.
+          prefix="v$(date -u +%Y).$(date -u +%-m)"
+          last=0
+          for tag in $(git tag --list "$prefix.*"); do
+            n=${tag##*.}
+            [[ $n =~ ^[0-9]+$ ]] && (( n > last )) && last=$n
+          done
+          version="$prefix.$((last + 1))"
+
+          git tag "$version"
+          git push origin "refs/tags/$version"
+          echo "Tagged $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
