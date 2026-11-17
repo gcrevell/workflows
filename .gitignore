@@ -1,0 +1,6 @@
+# OS
+.DS_Store
+
+# Claude
+.claude/worktrees/
+.claude/settings.local.json
